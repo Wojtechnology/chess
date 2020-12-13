@@ -7,9 +7,9 @@ use serde::Serialize;
 use serde_json::json;
 
 mod piece {
-    use super::{Board, Location};
+    use super::{Board, Location, WalkStrategy};
 
-    #[derive(Debug, Copy, Clone)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
     pub enum Type {
         Pawn,
         Bishop,
@@ -19,13 +19,13 @@ mod piece {
         King,
     }
 
-    #[derive(Debug, Copy, Clone)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
     pub enum Color {
         White,
         Black,
     }
 
-    #[derive(Debug, Copy, Clone)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
     pub struct Piece {
         pub tpe: Type,
         pub color: Color,
@@ -43,44 +43,89 @@ mod piece {
             Some(Self::new(tpe, color))
         }
 
-        fn valid_moves_pawn(&self, board: &Board, from: Location) -> Vec<Location> {
-            vec![]
-        }
-
-        fn valid_moves_bishop(&self, board: &Board, from: Location) -> Vec<Location> {
-            vec![]
-        }
-
-        fn valid_moves_knight(&self, board: &Board, from: Location) -> Vec<Location> {
-            vec![]
-        }
-
-        fn valid_moves_rook(&self, board: &Board, from: Location) -> Vec<Location> {
-            vec![]
-        }
-
-        fn valid_moves_queen(&self, board: &Board, from: Location) -> Vec<Location> {
-            vec![]
-        }
-
-        fn valid_moves_king(&self, board: &Board, from: Location) -> Vec<Location> {
-            vec![]
+        fn strategies_pawn(&self, from: Location) -> Vec<WalkStrategy> {
+            match self.color {
+                Color::White => {
+                    if from.y == 1 {
+                        vec![WalkStrategy::new(0, 1, 2)]
+                    } else {
+                        vec![WalkStrategy::new(0, 1, 1)]
+                    }
+                }
+                Color::Black => {
+                    if from.y == 6 {
+                        vec![WalkStrategy::new(0, -1, 2)]
+                    } else {
+                        vec![WalkStrategy::new(0, -1, 1)]
+                    }
+                }
+            }
         }
 
         pub fn valid_moves(&self, board: &Board, from: Location) -> Vec<Location> {
-            match self.tpe {
-                Type::Pawn => self.valid_moves_pawn(board, from),
-                Type::Bishop => self.valid_moves_bishop(board, from),
-                Type::Knight => self.valid_moves_knight(board, from),
-                Type::Rook => self.valid_moves_rook(board, from),
-                Type::Queen => self.valid_moves_queen(board, from),
-                Type::King => self.valid_moves_king(board, from),
+            let strategies = match self.tpe {
+                Type::Pawn => self.strategies_pawn(from),
+                Type::Bishop => vec![
+                    WalkStrategy::new(-1, -1, 7),
+                    WalkStrategy::new(-1, 1, 7),
+                    WalkStrategy::new(1, -1, 7),
+                    WalkStrategy::new(1, 1, 7),
+                ],
+                Type::Knight => vec![
+                    WalkStrategy::new(-2, -1, 1),
+                    WalkStrategy::new(-2, 1, 1),
+                    WalkStrategy::new(-1, -2, 1),
+                    WalkStrategy::new(-1, 2, 1),
+                    WalkStrategy::new(1, -2, 1),
+                    WalkStrategy::new(1, 2, 1),
+                    WalkStrategy::new(2, -1, 1),
+                    WalkStrategy::new(2, 1, 1),
+                ],
+                Type::Rook => vec![
+                    WalkStrategy::new(-1, 0, 7),
+                    WalkStrategy::new(0, -1, 7),
+                    WalkStrategy::new(0, 1, 7),
+                    WalkStrategy::new(1, 0, 7),
+                ],
+                Type::Queen => vec![
+                    WalkStrategy::new(-1, -1, 7),
+                    WalkStrategy::new(-1, 1, 7),
+                    WalkStrategy::new(1, -1, 7),
+                    WalkStrategy::new(1, 1, 7),
+                    WalkStrategy::new(-1, 0, 7),
+                    WalkStrategy::new(0, -1, 7),
+                    WalkStrategy::new(0, 1, 7),
+                    WalkStrategy::new(1, 0, 7),
+                ],
+                Type::King => vec![
+                    WalkStrategy::new(-1, -1, 1),
+                    WalkStrategy::new(-1, 1, 1),
+                    WalkStrategy::new(1, -1, 1),
+                    WalkStrategy::new(1, 1, 1),
+                    WalkStrategy::new(-1, 0, 1),
+                    WalkStrategy::new(0, -1, 1),
+                    WalkStrategy::new(0, 1, 1),
+                    WalkStrategy::new(1, 0, 1),
+                ],
+            };
+            let mut moves = Vec::new();
+            for strategy in strategies {
+                let walk = strategy.to_walk(from);
+                for dest in walk {
+                    if let Some(piece) = board.0[dest.y as usize][dest.x as usize] {
+                        if piece.color == self.color {
+                            break;
+                        }
+                    }
+                    moves.push(dest)
+                }
             }
+            moves
         }
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct Location {
     x: u8,
     y: u8,
@@ -95,6 +140,62 @@ impl Location {
 impl fmt::Display for Location {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.to_string())
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+struct WalkStrategy {
+    dx: i8,
+    dy: i8,
+    max_steps: u8,
+}
+
+impl WalkStrategy {
+    pub fn new(dx: i8, dy: i8, max_steps: u8) -> WalkStrategy {
+        WalkStrategy {
+            dx: dx,
+            dy: dy,
+            max_steps: max_steps,
+        }
+    }
+
+    pub fn to_walk(&self, start: Location) -> Walk {
+        Walk {
+            dx: self.dx,
+            dy: self.dy,
+            steps_left: self.max_steps,
+            cur: start,
+        }
+    }
+}
+
+struct Walk {
+    dx: i8,
+    dy: i8,
+    steps_left: u8,
+    cur: Location,
+}
+
+impl Iterator for Walk {
+    type Item = Location;
+
+    fn next(&mut self) -> Option<Location> {
+        if self.steps_left == 0 {
+            None
+        } else if self.dx < 0 && -self.dx as u8 > self.cur.x {
+            None
+        } else if self.dx > 0 && self.dx as u8 + self.cur.x >= 8 {
+            None
+        } else if self.dy < 0 && -self.dy as u8 > self.cur.y {
+            None
+        } else if self.dy > 0 && self.dy as u8 + self.cur.y >= 8 {
+            None
+        } else {
+            self.steps_left -= 1;
+            self.cur.x = (self.cur.x as i8 + self.dx) as u8;
+            self.cur.y = (self.cur.y as i8 + self.dy) as u8;
+            Some(self.cur)
+        }
     }
 }
 
@@ -155,6 +256,12 @@ impl Board {
         let piece = match self.0[from.y as usize][from.x as usize] {
             None => Err(format!("No piece at {}", from)),
             Some(p) => Ok(p),
+        }?;
+        let valid_moves = piece.valid_moves(self, from);
+        let () = if valid_moves.iter().any(|&dest| dest == to) {
+            Ok(())
+        } else {
+            Err("Invalid move".to_string())
         }?;
         self.0[from.y as usize][from.x as usize] = None;
         self.0[to.y as usize][to.x as usize] = Some(piece);
